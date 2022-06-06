@@ -1,0 +1,8 @@
+[package]
+name = "pluto_engine_test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pollster = "0.2.5"
+pluto_engine = { path = ".." }
