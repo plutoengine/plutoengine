@@ -6,7 +6,17 @@ edition = "2021"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["pe_audio_openal", "pe_render_wgpu", "pe_window_winit"]
+pe_audio_openal = []
+pe_render_wgpu = []
+pe_window_winit = []
+
+[target.'cfg(target_arch = "wasm32")'.features]
+default = ["pe_audio_webaudio", "pe_render_wgpu", "pe_window_winit"]
+pe_audio_webaudio = []
+pe_render_wgpu = []
+pe_window_winit = []
 
 [[bin]]
 name = "plutotest"

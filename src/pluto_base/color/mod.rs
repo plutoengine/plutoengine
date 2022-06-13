@@ -23,11 +23,13 @@
  */
 
 use cgmath::Vector4;
-use std::cmp;
+
+pub mod platform;
+pub use self::platform::*;
 
 type RGBAu8 = (u8, u8, u8, u8);
 
-trait Color: From<RGBAu8> + Copy + Clone {
+trait Color: From<RGBAu8> {
     fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self::from((r, g, b, a))
     }
@@ -183,7 +185,7 @@ impl From<RGBA> for HSBA {
 
 impl From<RGBAu8> for HSBA {
     fn from(rgba: RGBAu8) -> Self {
-        return RGBA::from(rgba).into();
+        RGBA::from(rgba).into()
     }
 }
 
@@ -198,42 +200,42 @@ impl Color for HSBA {
     }
 }
 
-const WHITE: RGBA = RGBA {
+pub const WHITE: RGBA = RGBA {
     r: 1.0,
     g: 1.0,
     b: 1.0,
     a: 1.0,
 };
 
-const BLACK: RGBA = RGBA {
+pub const BLACK: RGBA = RGBA {
     r: 0.0,
     g: 0.0,
     b: 0.0,
     a: 1.0,
 };
 
-const RED: RGBA = RGBA {
+pub const RED: RGBA = RGBA {
     r: 1.0,
     g: 0.0,
     b: 0.0,
     a: 1.0,
 };
 
-const GREEN: RGBA = RGBA {
+pub const GREEN: RGBA = RGBA {
     r: 0.0,
     g: 0.0,
     b: 0.0,
     a: 1.0,
 };
 
-const BLUE: RGBA = RGBA {
+pub const BLUE: RGBA = RGBA {
     r: 0.0,
     g: 0.0,
     b: 1.0,
     a: 1.0,
 };
 
-const YELLOW: RGBA = RGBA {
+pub const YELLOW: RGBA = RGBA {
     r: 1.0,
     g: 1.0,
     b: 0.0,
