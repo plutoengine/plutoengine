@@ -29,7 +29,7 @@ pub use self::platform::*;
 
 type RGBAu8 = (u8, u8, u8, u8);
 
-trait Color: From<RGBAu8> {
+pub trait Color: From<RGBAu8> {
     fn from_rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self::from((r, g, b, a))
     }
@@ -38,7 +38,7 @@ trait Color: From<RGBAu8> {
         Self::from_rgba(r, g, b, 255)
     }
 
-    fn lerp(&self, other: Self, ratio: f32) -> Self;
+    fn lerp(self, other: Self, ratio: f32) -> Self;
 }
 
 #[repr(C)]
@@ -74,7 +74,7 @@ impl From<RGBAu8> for RGBA {
 }
 
 impl Color for RGBA {
-    fn lerp(&self, other: Self, ratio: f32) -> Self {
+    fn lerp(self, other: Self, ratio: f32) -> Self {
         RGBA {
             r: self.r * ratio + other.r * (1.0 - ratio),
             g: self.g * ratio + other.g * (1.0 - ratio),
@@ -190,7 +190,7 @@ impl From<RGBAu8> for HSBA {
 }
 
 impl Color for HSBA {
-    fn lerp(&self, other: Self, ratio: f32) -> Self {
+    fn lerp(self, other: Self, ratio: f32) -> Self {
         HSBA {
             h: self.h * ratio + other.h * (1.0 - ratio),
             s: self.s * ratio + other.s * (1.0 - ratio),

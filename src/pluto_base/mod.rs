@@ -3,6 +3,7 @@
 pub mod color;
 pub mod pluto_io;
 pub mod render;
+pub mod audio;
 
 use std::borrow::Cow;
 use std::fs;
