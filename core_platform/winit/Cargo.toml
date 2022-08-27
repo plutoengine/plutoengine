@@ -1,0 +1,22 @@
+[package]
+name = "pluto_engine_core_platform_winit"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pluto_engine_window = { path = "../../core_components/window" }
+
+log = "0.4"
+winit = "0.27"
+pollster = "0.2"
+raw-window-handle = "0.4"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Window",
+    "Element",
+]}

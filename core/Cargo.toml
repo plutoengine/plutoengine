@@ -1,0 +1,27 @@
+[package]
+name = "pluto_engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["pe_render_wgpu", "pe_window_winit"]
+pe_render_wgpu = ["dep:pluto_engine_core_platform_wgpu"]
+pe_window_winit = ["dep:pluto_engine_core_platform_winit"]
+
+[target.'cfg(target_arch = "wasm32")'.features]
+default = ["pe_render_wgpu", "pe_window_winit"]
+pe_render_wgpu = ["dep:pluto_engine_core_platform_wgpu"]
+pe_window_winit = ["dep:pluto_engine_core_platform_winit"]
+
+[dependencies]
+cfg-if = "1"
+log = "0.4"
+pollster = "0.2"
+cgmath = "0.18"
+pluto_engine_display = { path = "../core_components/display" }
+pluto_engine_core_platform_winit = { path = "../core_platform/winit", optional = true }
+pluto_engine_core_platform_wgpu = { path = "../core_platform/wgpu", optional = true }
+
