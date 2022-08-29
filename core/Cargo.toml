@@ -24,4 +24,4 @@ cgmath = "0.18"
 pluto_engine_display = { path = "../core_components/display" }
 pluto_engine_core_platform_winit = { path = "../core_platform/winit", optional = true }
 pluto_engine_core_platform_wgpu = { path = "../core_platform/wgpu", optional = true }
-
+pluto_io = { path = "../core_io" }

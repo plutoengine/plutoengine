@@ -22,6 +22,34 @@
  * SOFTWARE.
  */
 
-pub mod color;
-pub mod pluto_io;
-pub mod runtime;
+use crate::runtime::{ApplicationBootstrapper, Runtime};
+
+use pluto_engine_display::pluto_engine_window::event_loop::{EventLoop, EventLoopWindowFactory};
+use std::convert::Infallible;
+use std::thread;
+
+pub struct PlutoRuntime;
+
+impl<E: EventLoop> Runtime<E> for PlutoRuntime {
+    fn run(bootstrapper: ApplicationBootstrapper<E>) -> Infallible {
+        E::run(move |evt_loop| {
+            let runtime = Self;
+            runtime.create_application(evt_loop, bootstrapper);
+        })
+    }
+
+    fn spawn_application_worker<F: FnOnce() + Send + 'static>(&self, worker: F) {
+        thread::spawn(worker);
+    }
+
+    fn create_application<ELW: EventLoopWindowFactory<E> + ?Sized>(
+        &self,
+        event_loop: &mut ELW,
+        bootstrapper: ApplicationBootstrapper<E>,
+    ) {
+        let window = event_loop.create_window();
+        <PlutoRuntime as Runtime<E>>::spawn_application_worker(self, move || {
+            bootstrapper.bootstrap(window);
+        });
+    }
+}

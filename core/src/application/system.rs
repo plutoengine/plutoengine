@@ -22,27 +22,4 @@
  * SOFTWARE.
  */
 
-use crate::pluto_base::color;
-use pluto_engine_core_platform_wgpu::wgpu;
-
-impl From<color::RGBA> for wgpu::Color {
-    fn from(rgba: color::RGBA) -> Self {
-        Self {
-            r: rgba.r as f64,
-            g: rgba.g as f64,
-            b: rgba.b as f64,
-            a: rgba.a as f64,
-        }
-    }
-}
-
-impl From<wgpu::Color> for color::RGBA {
-    fn from(wc: wgpu::Color) -> Self {
-        Self {
-            r: wc.r as f32,
-            g: wc.g as f32,
-            b: wc.b as f32,
-            a: wc.a as f32,
-        }
-    }
-}
+pub trait System {}

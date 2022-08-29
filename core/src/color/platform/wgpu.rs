@@ -22,22 +22,27 @@
  * SOFTWARE.
  */
 
-use std::path::Path;
+use crate::color;
+use pluto_engine_core_platform_wgpu::wgpu;
 
-struct PlutoPath {
-    str_repr: String,
-}
-
-impl PlutoPath {
-    pub fn new(path: &str) -> Self {
-        for _i in path.chars() {}
-
-        todo!()
+impl From<color::RGBA> for wgpu::Color {
+    fn from(rgba: color::RGBA) -> Self {
+        Self {
+            r: rgba.r as f64,
+            g: rgba.g as f64,
+            b: rgba.b as f64,
+            a: rgba.a as f64,
+        }
     }
 }
 
-impl AsRef<Path> for PlutoPath {
-    fn as_ref(&self) -> &Path {
-        todo!()
+impl From<wgpu::Color> for color::RGBA {
+    fn from(wc: wgpu::Color) -> Self {
+        Self {
+            r: wc.r as f32,
+            g: wc.g as f32,
+            b: wc.b as f32,
+            a: wc.a as f32,
+        }
     }
 }

@@ -24,9 +24,9 @@
 
 pub mod logger;
 
-use pluto_engine::pluto_base::runtime::platform::winit::wgpu::WinitWgpuDisplay;
-use pluto_engine::pluto_base::runtime::pluto_runtime::PlutoRuntime;
-use pluto_engine::pluto_base::runtime::{ApplicationBootstrapper, Runtime};
+use pluto_engine::runtime::platform::winit::wgpu::WinitWgpuDisplay;
+use pluto_engine::runtime::pluto_runtime::PlutoRuntime;
+use pluto_engine::runtime::{ApplicationBootstrapper, Runtime};
 use std::fs;
 
 use pluto_engine::pluto_engine_display::pluto_engine_render::device::{
@@ -54,6 +54,8 @@ use wgpu::util::DeviceExt;
 
 use crate::AttributeFormat::Float32x3;
 
+use pluto_engine::application::layer::LayerManager;
+use pluto_engine::application::Application;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
@@ -69,6 +71,8 @@ pub async fn main() {
             surface.configure(&device);
             let display = WinitWgpuDisplay::new(&mut surface, &window, &device);
             let mut state = State::new(display, &device, &queue);
+            let mut layer_manager = LayerManager::new();
+            pluto_engine_test::ApplicationTest::run(&mut layer_manager);
             ApplicationBootstrapper::<WinitEventLoop>::default_loop(&mut state);
         },
     )));

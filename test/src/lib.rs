@@ -22,6 +22,13 @@
  * SOFTWARE.
  */
 
-use pluto_engine::pluto_base;
+use pluto_engine::application::layer::LayerManager;
+use pluto_engine::application::Application;
 
-fn pluto_main() {}
+pub struct ApplicationTest;
+
+impl Application for ApplicationTest {
+    fn run(layers: &mut LayerManager) -> Self {
+        Self
+    }
+}
