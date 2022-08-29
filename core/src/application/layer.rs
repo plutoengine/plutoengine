@@ -74,14 +74,6 @@ pub trait Layer {
     fn on_leave(&mut self, _systems: &mut dyn LayerSystemProvider) {}
 }
 
-struct ZombieLayer;
-
-impl Layer for ZombieLayer {
-    fn should_detach(&self) -> Option<LayerSwapType> {
-        None
-    }
-}
-
 type LayerId = u64;
 
 #[derive(Copy, Clone, Debug)]
