@@ -22,4 +22,29 @@
  * SOFTWARE.
  */
 
-pub trait System {}
+use std::any::Any;
+
+pub trait SystemDyn: 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn as_system_mut(&mut self) -> &mut dyn System;
+}
+
+impl<T: SystemDyn + System> SystemDyn for T
+where
+    T: Sized,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn as_system_mut(&mut self) -> &mut dyn System {
+        self
+    }
+}
+
+pub trait System: SystemDyn {}

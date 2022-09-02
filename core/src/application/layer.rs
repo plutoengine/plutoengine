@@ -22,10 +22,9 @@
  * SOFTWARE.
  */
 
-use crate::application::system::System;
+use crate::application::system::{System, SystemDyn};
+use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
-use std::process::id;
-use std::slice::Iter;
 
 pub trait LayerDependencyManager {
     fn declare_dependency<T: Layer>(&mut self, supplier: impl FnOnce() -> T)
@@ -39,17 +38,17 @@ pub trait LayerDependencyManager {
 
 // Don't downcast this to the manager unless you want to be added to the naughty list. >:(
 pub trait LayerSystemProvider {
-    fn query<T: System>(&self) -> Iter<&T>
+    fn query<T: System>(&self) -> Option<&T>
     where
         Self: Sized;
 
-    fn query_mut<T: System>(&mut self) -> Iter<&mut T>
+    fn query_mut<T: System>(&mut self) -> Option<&mut T>
     where
         Self: Sized;
 }
 
-pub trait LayerSystemManager: LayerSystemProvider {
-    fn provide_system<T: System>(&mut self, system: &mut T)
+pub trait LayerSystemManager<'a>: LayerSystemProvider {
+    fn provide_system<T: System>(&mut self, system: &'a mut Box<T>)
     where
         Self: Sized;
 }
@@ -69,7 +68,7 @@ pub trait Layer {
         true
     }
 
-    fn on_enter(&mut self, _systems: &mut dyn LayerSystemManager) {}
+    fn on_enter(&mut self, _systems: &mut dyn LayerSystemManager<'_>) {}
 
     fn on_leave(&mut self, _systems: &mut dyn LayerSystemProvider) {}
 }
@@ -132,37 +131,45 @@ impl LayerDependencyManager for LayerManagerProxy {
     }
 }
 
-struct LayerSystemProxy;
+struct LayerSystemProxy<'a> {
+    systems: BTreeMap<TypeId, &'a mut dyn System>,
+}
 
-impl LayerSystemProvider for LayerSystemProxy {
-    fn query<T: System>(&self) -> Iter<&T>
+impl LayerSystemProvider for LayerSystemProxy<'_> {
+    fn query<T: System>(&self) -> Option<&T>
     where
         Self: Sized,
     {
-        todo!()
+        self.systems
+            .get(&TypeId::of::<T>())
+            .map(|system| system.as_any())
+            .and_then(|system| system.downcast_ref::<T>())
     }
 
-    fn query_mut<T: System>(&mut self) -> Iter<&mut T>
+    fn query_mut<T: System>(&mut self) -> Option<&mut T>
     where
         Self: Sized,
     {
-        todo!()
+        self.systems
+            .get_mut(&TypeId::of::<T>())
+            .map(|system| system.as_any_mut())
+            .and_then(|system| system.downcast_mut::<T>())
     }
 }
 
-impl LayerSystemManager for LayerSystemProxy {
-    fn provide_system<T: System>(&mut self, system: &mut T)
+impl<'a> LayerSystemManager<'a> for LayerSystemProxy<'a> {
+    fn provide_system<T: System>(&mut self, system: &'a mut Box<T>)
     where
         Self: Sized,
     {
-        todo!()
+        self.systems
+            .insert(TypeId::of::<T>(), system.as_system_mut());
     }
 }
 
 pub struct LayerManager {
     layers: BTreeMap<LayerId, Box<dyn Layer>>,
     proxy: LayerManagerProxy,
-    system_proxy: LayerSystemProxy,
 }
 
 impl LayerManager {
@@ -174,7 +181,6 @@ impl LayerManager {
             proxy: LayerManagerProxy {
                 new_layers: Vec::new(),
             },
-            system_proxy: LayerSystemProxy,
         }
     }
 
@@ -194,14 +200,17 @@ impl LayerManager {
     pub fn run(&mut self) {
         let mut layers_to_detach: Vec<(LayerId, LayerSwapType)> = Vec::new();
         let mut detaching_layers: Vec<(LayerSwapType, Box<dyn Layer>)> = Vec::new();
+        let mut system_proxy = LayerSystemProxy {
+            systems: BTreeMap::new(),
+        };
 
         loop {
             for layer in self.layers.values_mut() {
-                layer.on_enter(&mut self.system_proxy);
+                layer.on_enter(&mut system_proxy);
             }
 
             for layer in self.layers.values_mut() {
-                layer.on_leave(&mut self.system_proxy);
+                layer.on_leave(&mut system_proxy);
             }
 
             // Remove layers that are detaching
