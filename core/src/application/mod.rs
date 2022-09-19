@@ -28,5 +28,5 @@ pub mod layer;
 pub mod system;
 
 pub trait Application {
-    fn run(layer_manager: &mut LayerManager) -> Self;
+    fn run(layer_manager: &mut dyn LayerManager) -> Self;
 }
