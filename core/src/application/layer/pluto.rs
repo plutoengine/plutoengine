@@ -23,8 +23,8 @@
  */
 
 use crate::application::layer::{
-    Layer, LayerDependencyManager, LayerId, LayerManager, LayerSwapType, LayerSystemManager,
-    LayerSystemProvider, LayerWalker, SystemId,
+    Layer, LayerDependencyDeclaration, LayerDependencyManager, LayerId, LayerManager,
+    LayerSwapType, LayerSystemManager, LayerSystemProvider, LayerWalker, SystemId,
 };
 use crate::application::system::System;
 use std::any::TypeId;
@@ -36,17 +36,15 @@ struct PlutoLayerDependencyManager {
 }
 
 impl LayerDependencyManager for PlutoLayerDependencyManager {
-    fn declare_or_create_dependency<T: Layer>(&mut self, supplier: impl FnOnce() -> T)
-    where
-        Self: Sized,
-    {
-        todo!();
+    fn find_by_type(&self, layer_type: TypeId) -> Option<&dyn Layer> {
+        todo!()
     }
 
-    fn declare_dependency<T: Layer>(&mut self) -> Option<()>
-    where
-        Self: Sized,
-    {
+    fn find_by_type_mut(&mut self, layer_type: TypeId) -> Option<&mut dyn Layer> {
+        todo!()
+    }
+
+    fn add_layer(&mut self, layer: Box<dyn Layer>) -> &mut dyn Layer {
         todo!()
     }
 }
@@ -95,7 +93,7 @@ impl LayerWalker for PlutoLayerWalker<'_> {
     fn next(&mut self, system_proxy: &mut dyn LayerSystemManager) {
         if let Some(layer_info) = self.layers_iter.next() {
             layer_info.layer.on_enter(system_proxy, self);
-            layer_info.layer.on_leave(system_proxy);
+            layer_info.layer.on_leave(system_proxy.as_provider_mut());
         }
     }
 }
@@ -169,7 +167,7 @@ impl LayerManager for PlutoLayerManager {
             .next_back()
             .map_or(0, |l_id| l_id + Self::LAYER_ID_SPACING);
 
-        layer.on_attach(&mut self.proxy);
+        layer.on_attach(&mut LayerDependencyDeclaration(&mut self.proxy));
         // Manually added layers are always polled to completion (synchronously).
         LayerSwapType::Synchronous.poll_attach(&mut layer);
         self.layers.insert(id, LayerInfo { id, layer });
@@ -187,7 +185,7 @@ impl LayerManager for PlutoLayerManager {
         walker.next(&mut system_proxy);
 
         // Collect all layers that are detaching
-        let mut layers_to_detach: Vec<(LayerId, LayerSwapType)> = self
+        let layers_to_detach: Vec<(LayerId, LayerSwapType)> = self
             .layers
             .iter()
             .filter_map(|(id, layer_info)| {
@@ -217,7 +215,8 @@ impl LayerManager for PlutoLayerManager {
 mod test {
     use crate::application::layer::pluto::PlutoLayerManager;
     use crate::application::layer::{
-        Layer, LayerDependencyManager, LayerManager, LayerSwapType, LayerSystemManager, LayerWalker,
+        Layer, LayerDependencyDeclaration, LayerManager, LayerSwapType, LayerSystemManager,
+        LayerWalker,
     };
     use std::any::{Any, TypeId};
 
@@ -258,8 +257,8 @@ mod test {
             }
         }
 
-        fn on_attach(&mut self, dependencies: &mut dyn LayerDependencyManager) {
-            dependencies.declare_or_create_dependency(|| DummyLayer2 { enter_count: 0 });
+        fn on_attach(&mut self, dependencies: &mut LayerDependencyDeclaration) {
+            dependencies.or_create(|| Box::new(DummyLayer2 { enter_count: 0 }));
         }
 
         fn on_detach(&mut self) {

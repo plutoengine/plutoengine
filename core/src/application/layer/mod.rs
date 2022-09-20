@@ -27,14 +27,69 @@ use std::any::{Any, TypeId};
 
 pub mod pluto;
 
-pub trait LayerDependencyManager {
-    fn declare_or_create_dependency<T: Layer>(&mut self, supplier: impl FnOnce() -> T)
-    where
-        Self: Sized;
+pub struct LayerDependencyDeclaration<'a>(&'a mut dyn LayerDependencyManager);
 
-    fn declare_dependency<T: Layer>(&mut self) -> Option<()>
-    where
-        Self: Sized;
+impl LayerDependencyDeclaration<'_> {
+    pub fn required<T: Layer>(&self) -> &T {
+        &self
+            .0
+            .find_by_type(TypeId::of::<T>())
+            .unwrap()
+            .as_any()
+            .downcast_ref()
+            .unwrap()
+    }
+
+    pub fn optional<T: Layer>(&self) -> Option<&T> {
+        self.0
+            .find_by_type(TypeId::of::<T>())
+            .and_then(|layer| layer.as_any().downcast_ref())
+    }
+
+    pub fn or_create<T: Layer>(&mut self, supplier: impl FnOnce() -> Box<T>) -> &T {
+        if let Some(layer) = self.0.find_by_type(TypeId::of::<T>()) {
+            if let Some(layer_s) = layer.as_any().downcast_ref() {
+                return layer_s;
+            }
+        }
+
+        let layer = supplier();
+        self.0.add_layer(layer).as_any().downcast_ref().unwrap()
+    }
+
+    pub fn required_mut<T: Layer>(&mut self) -> &mut T {
+        self.0
+            .find_by_type_mut(TypeId::of::<T>())
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut()
+            .unwrap()
+    }
+
+    pub fn optional_mut<T: Layer>(&mut self) -> Option<&mut T> {
+        self.0
+            .find_by_type_mut(TypeId::of::<T>())
+            .and_then(|layer| layer.as_any_mut().downcast_mut())
+    }
+
+    pub fn or_create_mut<T: Layer>(&mut self, supplier: impl FnOnce() -> Box<T>) -> &mut T {
+        if let Some(layer) = self.0.find_by_type_mut(TypeId::of::<T>()) {
+            if let Some(layer_s) = layer.as_any_mut().downcast_mut() {
+                return layer_s;
+            }
+        }
+
+        let layer = supplier();
+        self.0.add_layer(layer).as_any_mut().downcast_mut().unwrap()
+    }
+}
+
+pub trait LayerDependencyManager {
+    fn find_by_type(&self, layer_type: TypeId) -> Option<&dyn Layer>;
+
+    fn find_by_type_mut(&mut self, layer_type: TypeId) -> Option<&mut dyn Layer>;
+
+    fn add_layer(&mut self, layer: Box<dyn Layer>) -> &mut dyn Layer;
 }
 
 // Don't downcast this to the manager unless you want to be added to the naughty list. >:(
@@ -48,32 +103,42 @@ pub trait LayerSystemProvider {
         Self: Sized;
 }
 
-pub trait LayerSystemManager<'a>: LayerSystemProvider {
+pub trait LayerSystemManager<'a>: LayerSystemProvider + AsProvider {
     fn provide_system<T: System>(&mut self, system: &'a mut Box<T>)
     where
         Self: Sized;
+}
 
-    fn as_provider(&self) -> &dyn LayerSystemProvider
-    where
-        Self: Sized,
-    {
+trait AsProvider {
+    fn as_provider(&self) -> &dyn LayerSystemProvider;
+
+    fn as_provider_mut(&mut self) -> &mut dyn LayerSystemProvider;
+}
+
+impl<'a, T> AsProvider for T
+where
+    T: LayerSystemManager<'a> + LayerSystemProvider,
+{
+    fn as_provider(&self) -> &dyn LayerSystemProvider {
         self
     }
 
-    fn as_provider_mut(&mut self) -> &mut dyn LayerSystemProvider
-    where
-        Self: Sized,
-    {
+    fn as_provider_mut(&mut self) -> &mut dyn LayerSystemProvider {
         self
     }
 }
 
 type LayerId = u64;
 
-pub trait Layer: 'static {
+pub trait LayerObj: 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+pub trait Layer: LayerObj {
     fn should_detach(&self) -> Option<LayerSwapType>;
 
-    fn on_attach(&mut self, _dependencies: &mut dyn LayerDependencyManager) {}
+    fn on_attach(&mut self, _dependencies: &mut LayerDependencyDeclaration) {}
 
     fn on_detach(&mut self) {}
 
@@ -90,18 +155,14 @@ pub trait Layer: 'static {
     }
 
     fn on_leave(&mut self, _systems: &mut dyn LayerSystemProvider) {}
+}
 
-    fn as_any(&self) -> &dyn Any
-    where
-        Self: Sized,
-    {
+impl<T: Layer> LayerObj for T {
+    fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn Any
-    where
-        Self: Sized,
-    {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
