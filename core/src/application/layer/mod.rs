@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-use crate::application::system::System;
+use crate::application::system::{System, SystemDyn};
 use std::any::{Any, TypeId};
 
 pub mod pluto;
@@ -47,10 +47,13 @@ impl LayerDependencyDeclaration<'_> {
     }
 
     pub fn or_create<T: Layer>(&mut self, supplier: impl FnOnce() -> Box<T>) -> &T {
-        if let Some(layer) = self.0.find_by_type(TypeId::of::<T>()) {
-            if let Some(layer_s) = layer.as_any().downcast_ref() {
-                return layer_s;
-            }
+        if self.optional::<T>().is_some() {
+            return self
+                .optional::<T>()
+                .unwrap()
+                .as_any()
+                .downcast_ref()
+                .unwrap();
         }
 
         let layer = supplier();
@@ -73,10 +76,13 @@ impl LayerDependencyDeclaration<'_> {
     }
 
     pub fn or_create_mut<T: Layer>(&mut self, supplier: impl FnOnce() -> Box<T>) -> &mut T {
-        if let Some(layer) = self.0.find_by_type_mut(TypeId::of::<T>()) {
-            if let Some(layer_s) = layer.as_any_mut().downcast_mut() {
-                return layer_s;
-            }
+        if self.optional_mut::<T>().is_some() {
+            return self
+                .optional_mut::<T>()
+                .unwrap()
+                .as_any_mut()
+                .downcast_mut()
+                .unwrap();
         }
 
         let layer = supplier();
@@ -109,7 +115,7 @@ pub trait LayerSystemManager<'a>: LayerSystemProvider + AsProvider {
         Self: Sized;
 }
 
-trait AsProvider {
+pub trait AsProvider {
     fn as_provider(&self) -> &dyn LayerSystemProvider;
 
     fn as_provider_mut(&mut self) -> &mut dyn LayerSystemProvider;
