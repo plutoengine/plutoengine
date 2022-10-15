@@ -23,8 +23,8 @@
  */
 
 use crate::application::layer::{
-    Layer, LayerDependencyDeclaration, LayerDependencyManager, LayerId, LayerManager,
-    LayerSwapType, LayerSystemManager, LayerSystemProvider, LayerWalker, SystemId,
+    Layer, LayerDependencyDeclaration, LayerDependencyManager, LayerManager, LayerSwapType,
+    LayerSystemManager, LayerSystemProvider, LayerWalker, SystemId,
 };
 use crate::application::system::System;
 use std::any::{Any, TypeId};
@@ -47,8 +47,8 @@ impl LayerDependencyManager for PlutoLayerDependencyManager<'_> {
             self.manager
                 .layers
                 .values()
-                .map(|li| li.layer)
-                .find(|l| l.type_id() == layer_type)?
+                .find(|l| l.layer.type_id() == layer_type)?
+                .layer
                 .as_ref(),
         )
     }
@@ -57,9 +57,9 @@ impl LayerDependencyManager for PlutoLayerDependencyManager<'_> {
         Some(
             self.manager
                 .layers
-                .values()
-                .map(|li| li.layer)
-                .find(|l| l.type_id() == layer_type)?
+                .values_mut()
+                .find(|l| l.layer.type_id() == layer_type)?
+                .layer
                 .as_mut(),
         )
     }
@@ -188,7 +188,7 @@ impl LayerManager for PlutoLayerManager {
             .map_or(0, |l_id| l_id + Self::LAYER_ID_SPACING);
 
         layer.on_attach(&mut LayerDependencyDeclaration(
-            &mut PlutoLayerDependencyManager(self),
+            &mut PlutoLayerDependencyManager { manager: self },
         ));
         // Manually added layers are always polled to completion (synchronously).
         LayerSwapType::Synchronous.poll_attach(&mut layer);

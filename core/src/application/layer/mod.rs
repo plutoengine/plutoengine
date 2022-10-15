@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-use crate::application::system::{System, SystemDyn};
+use crate::application::system::System;
 use std::any::{Any, TypeId};
 
 pub mod pluto;
