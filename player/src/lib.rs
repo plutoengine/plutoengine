@@ -54,7 +54,7 @@ use wgpu::util::DeviceExt;
 
 use crate::AttributeFormat::Float32x3;
 
-use pluto_engine::application::layer::LayerManager;
+use pluto_engine::application::layer::pluto::PlutoLayerManager;
 use pluto_engine::application::Application;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
@@ -71,7 +71,7 @@ pub async fn main() {
             surface.configure(&device);
             let display = WinitWgpuDisplay::new(&mut surface, &window, &device);
             let mut state = State::new(display, &device, &queue);
-            let mut layer_manager = LayerManager::new();
+            let mut layer_manager = PlutoLayerManager::new();
             pluto_engine_test::ApplicationTest::run(&mut layer_manager);
             ApplicationBootstrapper::<WinitEventLoop>::default_loop(&mut state);
         },

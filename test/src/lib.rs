@@ -28,7 +28,7 @@ use pluto_engine::application::Application;
 pub struct ApplicationTest;
 
 impl Application for ApplicationTest {
-    fn run(layers: &mut LayerManager) -> Self {
+    fn run(layers: &mut dyn LayerManager) -> Self {
         Self
     }
 }

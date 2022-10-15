@@ -27,21 +27,41 @@ use crate::application::layer::{
     LayerSwapType, LayerSystemManager, LayerSystemProvider, LayerWalker, SystemId,
 };
 use crate::application::system::System;
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::collections::btree_map::ValuesMut;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
-struct PlutoLayerDependencyManager {
+type LayerId = u64;
+
+struct PlutoLayerProxy {
     new_layers: Vec<(LayerId, LayerSwapType, Box<dyn Layer>)>,
 }
 
-impl LayerDependencyManager for PlutoLayerDependencyManager {
+struct PlutoLayerDependencyManager<'a> {
+    manager: &'a mut PlutoLayerManager,
+}
+
+impl LayerDependencyManager for PlutoLayerDependencyManager<'_> {
     fn find_by_type(&self, layer_type: TypeId) -> Option<&dyn Layer> {
-        todo!()
+        Some(
+            self.manager
+                .layers
+                .values()
+                .map(|li| li.layer)
+                .find(|l| l.type_id() == layer_type)?
+                .as_ref(),
+        )
     }
 
     fn find_by_type_mut(&mut self, layer_type: TypeId) -> Option<&mut dyn Layer> {
-        todo!()
+        Some(
+            self.manager
+                .layers
+                .values()
+                .map(|li| li.layer)
+                .find(|l| l.type_id() == layer_type)?
+                .as_mut(),
+        )
     }
 
     fn add_layer(&mut self, layer: Box<dyn Layer>) -> &mut dyn Layer {
@@ -50,7 +70,7 @@ impl LayerDependencyManager for PlutoLayerDependencyManager {
 }
 
 struct PlutoLayerSystemProxy<'a> {
-    systems: BTreeMap<SystemId, &'a mut dyn System>,
+    systems: HashMap<SystemId, &'a mut dyn System>,
 }
 
 impl LayerSystemProvider for PlutoLayerSystemProxy<'_> {
@@ -106,17 +126,17 @@ struct LayerInfo {
 pub struct PlutoLayerManager {
     layers: BTreeMap<LayerId, LayerInfo>,
     detaching_layers: Vec<(LayerSwapType, Box<dyn Layer>)>,
-    proxy: PlutoLayerDependencyManager,
+    proxy: PlutoLayerProxy,
 }
 
 impl PlutoLayerManager {
-    const LAYER_ID_SPACING: LayerId = 100;
+    const LAYER_ID_SPACING: LayerId = 640;
 
     pub fn new() -> Self {
         Self {
             layers: BTreeMap::new(),
             detaching_layers: Vec::new(),
-            proxy: PlutoLayerDependencyManager {
+            proxy: PlutoLayerProxy {
                 new_layers: Vec::new(),
             },
         }
@@ -167,7 +187,9 @@ impl LayerManager for PlutoLayerManager {
             .next_back()
             .map_or(0, |l_id| l_id + Self::LAYER_ID_SPACING);
 
-        layer.on_attach(&mut LayerDependencyDeclaration(&mut self.proxy));
+        layer.on_attach(&mut LayerDependencyDeclaration(
+            &mut PlutoLayerDependencyManager(self),
+        ));
         // Manually added layers are always polled to completion (synchronously).
         LayerSwapType::Synchronous.poll_attach(&mut layer);
         self.layers.insert(id, LayerInfo { id, layer });
@@ -175,7 +197,7 @@ impl LayerManager for PlutoLayerManager {
 
     fn run(&mut self) -> bool {
         let mut system_proxy = PlutoLayerSystemProxy {
-            systems: BTreeMap::new(),
+            systems: HashMap::new(),
         };
 
         let mut walker = PlutoLayerWalker {
