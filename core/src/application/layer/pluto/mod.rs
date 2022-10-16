@@ -28,13 +28,14 @@ use crate::application::layer::{
 };
 use crate::application::system::System;
 use std::any::{Any, TypeId};
-use std::collections::btree_map::ValuesMut;
-use std::collections::{BTreeMap, HashMap};
+use std::cell::Cell;
+use std::collections::HashMap;
+use std::slice::IterMut;
 
 type LayerId = u64;
 
 struct PlutoLayerProxy {
-    new_layers: Vec<(LayerId, LayerSwapType, Box<dyn Layer>)>,
+    new_layers: Vec<(LayerSwapType, Box<dyn Layer>)>,
 }
 
 struct PlutoLayerDependencyManager<'a> {
@@ -106,12 +107,13 @@ impl<'a> LayerSystemManager<'a> for PlutoLayerSystemProxy<'a> {
 }
 
 struct PlutoLayerWalker<'a> {
-    layers_iter: ValuesMut<'a, LayerId, LayerInfo>,
+    layers: IterMut<'a, *mut LayerInfo>,
 }
 
 impl LayerWalker for PlutoLayerWalker<'_> {
     fn next(&mut self, system_proxy: &mut dyn LayerSystemManager) {
-        if let Some(layer_info) = self.layers_iter.next() {
+        if let Some(&mut layer_info) = self.layers.next() {
+            let layer_info = unsafe { &mut *layer_info };
             layer_info.layer.on_enter(system_proxy, self);
             layer_info.layer.on_leave(system_proxy.as_provider_mut());
         }
@@ -123,23 +125,148 @@ struct LayerInfo {
     layer: Box<dyn Layer>,
 }
 
+#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+enum TraversalChainNode {
+    Start,
+    End,
+    Link(LayerId),
+}
+
+#[derive(Clone)]
+struct TraversalChainWalker<'a>(TraversalChainNode, &'a TraversalChain);
+
+impl Iterator for TraversalChainWalker<'_> {
+    type Item = LayerId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0 = self.1.get_next(&self.0);
+
+        match self.0 {
+            TraversalChainNode::Start => unreachable!(),
+            TraversalChainNode::End => None,
+            TraversalChainNode::Link(layer_id) => Some(layer_id),
+        }
+    }
+}
+
+struct TraversalChain {
+    fwd_chain: HashMap<TraversalChainNode, TraversalChainNode>,
+    bwd_chain: HashMap<TraversalChainNode, TraversalChainNode>,
+}
+
+impl TraversalChain {
+    fn new() -> Self {
+        let mut fwd_chain = HashMap::new();
+        fwd_chain.insert(TraversalChainNode::Start, TraversalChainNode::End);
+
+        let mut bwd_chain = HashMap::new();
+        bwd_chain.insert(TraversalChainNode::End, TraversalChainNode::Start);
+
+        Self {
+            fwd_chain,
+            bwd_chain,
+        }
+    }
+
+    fn remove(&mut self, id: LayerId) {
+        let link = &TraversalChainNode::Link(id);
+
+        let next = self.fwd_chain[link];
+        let prev = self.bwd_chain[link];
+
+        self.fwd_chain.insert(prev, next);
+        self.bwd_chain.insert(next, prev);
+
+        self.fwd_chain.remove(link);
+        self.bwd_chain.remove(link);
+    }
+
+    fn insert_after(&mut self, id: LayerId, after: LayerId) {
+        let link = TraversalChainNode::Link(id);
+        let after_link = TraversalChainNode::Link(after);
+
+        let next = self.fwd_chain[&after_link];
+        let prev = after_link;
+
+        self.fwd_chain.insert(prev, link);
+        self.fwd_chain.insert(link, next);
+
+        self.bwd_chain.insert(next, link);
+        self.bwd_chain.insert(link, prev);
+    }
+
+    fn insert_before(&mut self, id: LayerId, before: LayerId) {
+        let link = TraversalChainNode::Link(id);
+        let before_link = TraversalChainNode::Link(before);
+
+        let next = before_link;
+        let prev = self.bwd_chain[&before_link];
+
+        self.fwd_chain.insert(prev, link);
+        self.fwd_chain.insert(link, next);
+
+        self.bwd_chain.insert(next, link);
+        self.bwd_chain.insert(link, prev);
+    }
+
+    fn insert_first(&mut self, id: LayerId) {
+        let link = TraversalChainNode::Link(id);
+        let next = self.fwd_chain[&TraversalChainNode::Start];
+        let prev = TraversalChainNode::Start;
+
+        self.fwd_chain.insert(prev, link);
+        self.fwd_chain.insert(link, next);
+
+        self.bwd_chain.insert(next, link);
+        self.bwd_chain.insert(link, prev);
+    }
+
+    fn insert_last(&mut self, id: LayerId) {
+        let link = TraversalChainNode::Link(id);
+        let next = TraversalChainNode::End;
+        let prev = self.bwd_chain[&TraversalChainNode::End];
+
+        self.fwd_chain.insert(prev, link);
+        self.fwd_chain.insert(link, next);
+
+        self.bwd_chain.insert(next, link);
+        self.bwd_chain.insert(link, prev);
+    }
+
+    fn get_next(&self, node: &TraversalChainNode) -> TraversalChainNode {
+        self.fwd_chain[node]
+    }
+
+    fn iter(&self) -> TraversalChainWalker {
+        TraversalChainWalker(TraversalChainNode::Start, self)
+    }
+}
+
 pub struct PlutoLayerManager {
-    layers: BTreeMap<LayerId, LayerInfo>,
+    traversal_chain: TraversalChain,
+    layers: HashMap<LayerId, LayerInfo>,
     detaching_layers: Vec<(LayerSwapType, Box<dyn Layer>)>,
     proxy: PlutoLayerProxy,
+    id_counter: LayerId,
 }
 
 impl PlutoLayerManager {
-    const LAYER_ID_SPACING: LayerId = 640;
-
     pub fn new() -> Self {
         Self {
-            layers: BTreeMap::new(),
+            traversal_chain: TraversalChain::new(),
+            layers: HashMap::new(),
             detaching_layers: Vec::new(),
             proxy: PlutoLayerProxy {
                 new_layers: Vec::new(),
             },
+            id_counter: 0,
         }
+    }
+
+    fn create_id(&mut self) -> LayerId {
+        let id = self.id_counter;
+        self.id_counter += 1;
+        id
     }
 
     fn detach_poll(&mut self) {
@@ -160,11 +287,12 @@ impl PlutoLayerManager {
         // Poll attaching layers
         let mut i = 0;
         while i < self.proxy.new_layers.len() {
-            let (id, swap_type, ..) = self.proxy.new_layers[i];
+            let (swap_type, ..) = self.proxy.new_layers[i];
             let (.., layer) = &mut self.proxy.new_layers[i];
 
             if swap_type.poll_attach(layer) {
                 let (.., layer_owned) = self.proxy.new_layers.remove(i);
+                let id = self.create_id();
                 self.layers.insert(
                     id,
                     LayerInfo {
@@ -172,6 +300,7 @@ impl PlutoLayerManager {
                         layer: layer_owned,
                     },
                 );
+                self.traversal_chain.insert_last(id);
             } else {
                 i += 1;
             }
@@ -181,18 +310,16 @@ impl PlutoLayerManager {
 
 impl LayerManager for PlutoLayerManager {
     fn add_layer(&mut self, mut layer: Box<dyn Layer>) {
-        let id = self
-            .layers
-            .keys()
-            .next_back()
-            .map_or(0, |l_id| l_id + Self::LAYER_ID_SPACING);
-
         layer.on_attach(&mut LayerDependencyDeclaration(
             &mut PlutoLayerDependencyManager { manager: self },
         ));
         // Manually added layers are always polled to completion (synchronously).
         LayerSwapType::Synchronous.poll_attach(&mut layer);
-        self.layers.insert(id, LayerInfo { id, layer });
+
+        let id = self.create_id();
+        let info = LayerInfo { id, layer };
+        self.layers.insert(id, info);
+        self.traversal_chain.insert_last(id);
     }
 
     fn run(&mut self) -> bool {
@@ -200,8 +327,13 @@ impl LayerManager for PlutoLayerManager {
             systems: HashMap::new(),
         };
 
+        let layers_iter = self.traversal_chain.iter();
+        let mut layers = layers_iter
+            .map(|id| self.layers.get_mut(&id).unwrap() as *mut LayerInfo)
+            .collect::<Vec<*mut LayerInfo>>();
+
         let mut walker = PlutoLayerWalker {
-            layers_iter: self.layers.values_mut(),
+            layers: layers.iter_mut(),
         };
 
         walker.next(&mut system_proxy);
@@ -309,11 +441,7 @@ mod test {
         );
 
         assert_eq!(
-            layer_manager
-                .layers
-                .get(&PlutoLayerManager::LAYER_ID_SPACING)
-                .unwrap()
-                .type_id(),
+            layer_manager.layers.get(&1).unwrap().type_id(),
             TypeId::of::<DummyLayer2>()
         );
 
@@ -324,9 +452,7 @@ mod test {
 
             assert!(!layer_manager.layers.is_empty());
 
-            let layer = layer_manager
-                .layers
-                .get(&PlutoLayerManager::LAYER_ID_SPACING);
+            let layer = layer_manager.layers.get(&1);
 
             assert!(layer.is_some());
 
