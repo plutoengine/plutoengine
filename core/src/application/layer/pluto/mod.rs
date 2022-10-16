@@ -330,7 +330,7 @@ impl LayerManager for PlutoLayerManager {
         let layers_iter = self.traversal_chain.iter();
         let mut layers = layers_iter
             .map(|id| self.layers.get_mut(&id).unwrap() as *mut LayerInfo)
-            .collect::<Vec<*mut LayerInfo>>();
+            .collect::<Vec<_>>();
 
         let mut walker = PlutoLayerWalker {
             layers: layers.iter_mut(),
