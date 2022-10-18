@@ -29,13 +29,14 @@ use crate::application::layer::{
 use crate::application::system::System;
 use std::any::{Any, TypeId};
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::fmt::{Debug, Formatter};
 use std::slice::IterMut;
 
 type LayerId = u64;
 
 struct PlutoLayerProxy {
-    new_layers: Vec<(LayerSwapType, Box<dyn Layer>)>,
+    new_layers: VecDeque<(LayerSwapType, Box<dyn Layer>)>,
 }
 
 struct PlutoLayerDependencyManager<'a> {
@@ -65,8 +66,13 @@ impl LayerDependencyManager for PlutoLayerDependencyManager<'_> {
         )
     }
 
-    fn add_layer(&mut self, layer: Box<dyn Layer>) -> &mut dyn Layer {
-        todo!()
+    fn add_layer(&mut self, mut layer: Box<dyn Layer>) -> &mut dyn Layer {
+        self.manager
+            .proxy
+            .new_layers
+            .push_back((LayerSwapType::Synchronous, layer));
+
+        self.manager.proxy.new_layers.back_mut().unwrap().1.as_mut()
     }
 }
 
@@ -125,7 +131,18 @@ struct LayerInfo {
     layer: Box<dyn Layer>,
 }
 
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
+impl Debug for LayerInfo {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LayerInfo {{ id: {}, layer: {:?} }}",
+            self.id,
+            <dyn Layer>::as_any(&*self.layer).type_id()
+        )
+    }
+}
+
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 enum TraversalChainNode {
     Start,
     End,
@@ -257,7 +274,7 @@ impl PlutoLayerManager {
             layers: HashMap::new(),
             detaching_layers: Vec::new(),
             proxy: PlutoLayerProxy {
-                new_layers: Vec::new(),
+                new_layers: VecDeque::new(),
             },
             id_counter: 0,
         }
@@ -291,7 +308,7 @@ impl PlutoLayerManager {
             let (.., layer) = &mut self.proxy.new_layers[i];
 
             if swap_type.poll_attach(layer) {
-                let (.., layer_owned) = self.proxy.new_layers.remove(i);
+                let (.., layer_owned) = self.proxy.new_layers.remove(i).unwrap();
                 let id = self.create_id();
                 self.layers.insert(
                     id,
@@ -313,6 +330,11 @@ impl LayerManager for PlutoLayerManager {
         layer.on_attach(&mut LayerDependencyDeclaration(
             &mut PlutoLayerDependencyManager { manager: self },
         ));
+
+        while let Some((.., layer)) = self.proxy.new_layers.pop_front() {
+            self.add_layer(layer);
+        }
+
         // Manually added layers are always polled to completion (synchronously).
         LayerSwapType::Synchronous.poll_attach(&mut layer);
 
@@ -344,7 +366,7 @@ impl LayerManager for PlutoLayerManager {
             .iter()
             .filter_map(|(id, layer_info)| {
                 if let Some(swap_type) = layer_info.layer.should_detach() {
-                    Some((*id, swap_type));
+                    return Some((*id, swap_type));
                 }
 
                 None
@@ -354,6 +376,7 @@ impl LayerManager for PlutoLayerManager {
         // Remove layers that are detaching
         for (id, swap_type) in layers_to_detach.into_iter() {
             let layer_info = self.layers.remove(&id).unwrap();
+            self.traversal_chain.remove(id);
             self.detaching_layers.push((swap_type, layer_info.layer));
         }
 
@@ -372,6 +395,7 @@ mod test {
         Layer, LayerDependencyDeclaration, LayerManager, LayerSwapType, LayerSystemManager,
         LayerWalker,
     };
+    use log::debug;
     use std::any::{Any, TypeId};
 
     struct DummyLayer2 {
@@ -407,7 +431,10 @@ mod test {
             match self.enter_count {
                 0..=2 => None,
                 3 => Some(LayerSwapType::Synchronous),
-                _ => unreachable!("Should not be called more than 3 times!"),
+                _ => unreachable!(
+                    "Should not be called more than 3 times ({})!",
+                    self.enter_count
+                ),
             }
         }
 
@@ -431,18 +458,40 @@ mod test {
     }
 
     #[test]
-    fn test_layer_manager() {
-        let mut layer_manager = PlutoLayerManager::new();
-        layer_manager.add_layer(Box::new(DummyLayer { enter_count: 0 }));
+    fn test_dependencies() {
+        let mut manager = PlutoLayerManager::new();
+        manager.add_layer(Box::new(DummyLayer { enter_count: 0 }));
+
+        println!("{:?}", manager.layers);
+
+        assert_eq!(manager.layers.len(), 2);
 
         assert_eq!(
-            layer_manager.layers.get(&0).unwrap().type_id(),
+            <dyn Layer>::as_any(&*manager.layers.get(&0).unwrap().layer).type_id(),
             TypeId::of::<DummyLayer2>()
         );
 
         assert_eq!(
-            layer_manager.layers.get(&1).unwrap().type_id(),
+            <dyn Layer>::as_any(&*manager.layers.get(&1).unwrap().layer).type_id(),
+            TypeId::of::<DummyLayer>()
+        );
+    }
+
+    #[test]
+    fn test_layer_manager() {
+        let mut layer_manager = PlutoLayerManager::new();
+        layer_manager.add_layer(Box::new(DummyLayer { enter_count: 0 }));
+
+        assert_eq!(layer_manager.layers.len(), 2);
+
+        assert_eq!(
+            <dyn Layer>::as_any(&*layer_manager.layers.get(&0).unwrap().layer).type_id(),
             TypeId::of::<DummyLayer2>()
+        );
+
+        assert_eq!(
+            <dyn Layer>::as_any(&*layer_manager.layers.get(&1).unwrap().layer).type_id(),
+            TypeId::of::<DummyLayer>()
         );
 
         loop {
@@ -464,5 +513,7 @@ mod test {
 
             assert!(layer.enter_count <= 3);
         }
+
+        assert_eq!(layer_manager.layers.len(), 0);
     }
 }
