@@ -494,6 +494,11 @@ mod test {
             TypeId::of::<DummyLayer>()
         );
 
+        println!("{:?}", layer_manager.traversal_chain.fwd_chain);
+
+        assert_eq!(layer_manager.traversal_chain.fwd_chain.len(), 3);
+        assert_eq!(layer_manager.traversal_chain.bwd_chain.len(), 3);
+
         loop {
             if layer_manager.run() {
                 break;
@@ -515,5 +520,7 @@ mod test {
         }
 
         assert_eq!(layer_manager.layers.len(), 0);
+        assert_eq!(layer_manager.traversal_chain.fwd_chain.len(), 1);
+        assert_eq!(layer_manager.traversal_chain.bwd_chain.len(), 1);
     }
 }
