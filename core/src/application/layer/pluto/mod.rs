@@ -390,7 +390,7 @@ impl LayerManager for PlutoLayerManager {
 
 #[cfg(test)]
 mod test {
-    use crate::application::layer::pluto::PlutoLayerManager;
+    use crate::application::layer::pluto::{PlutoLayerManager, TraversalChainNode};
     use crate::application::layer::{
         Layer, LayerDependencyDeclaration, LayerManager, LayerSwapType, LayerSystemManager,
         LayerWalker,
@@ -457,6 +457,8 @@ mod test {
         }
     }
 
+    /// A single layer with one dependency is added to the layer manager.
+    /// Two layers should be present.
     #[test]
     fn test_dependencies() {
         let mut manager = PlutoLayerManager::new();
@@ -478,26 +480,32 @@ mod test {
     }
 
     #[test]
-    fn test_layer_manager() {
+    fn test_traversal_chain() {
         let mut layer_manager = PlutoLayerManager::new();
         layer_manager.add_layer(Box::new(DummyLayer { enter_count: 0 }));
-
-        assert_eq!(layer_manager.layers.len(), 2);
-
-        assert_eq!(
-            <dyn Layer>::as_any(&*layer_manager.layers.get(&0).unwrap().layer).type_id(),
-            TypeId::of::<DummyLayer2>()
-        );
-
-        assert_eq!(
-            <dyn Layer>::as_any(&*layer_manager.layers.get(&1).unwrap().layer).type_id(),
-            TypeId::of::<DummyLayer>()
-        );
 
         println!("{:?}", layer_manager.traversal_chain.fwd_chain);
 
         assert_eq!(layer_manager.traversal_chain.fwd_chain.len(), 3);
         assert_eq!(layer_manager.traversal_chain.bwd_chain.len(), 3);
+
+        let mut node = TraversalChainNode::Start;
+
+        for i in 0..layer_manager.traversal_chain.fwd_chain.len() {
+            let next_node = layer_manager.traversal_chain.fwd_chain.get(&node).unwrap();
+            assert_ne!(next_node, &node);
+            node = next_node.clone();
+        }
+
+        assert_eq!(node, TraversalChainNode::End);
+    }
+
+    #[test]
+    fn test_unmount() {
+        let mut layer_manager = PlutoLayerManager::new();
+        layer_manager.add_layer(Box::new(DummyLayer { enter_count: 0 }));
+
+        println!("{:?}", layer_manager.traversal_chain.fwd_chain);
 
         loop {
             if layer_manager.run() {
@@ -520,6 +528,24 @@ mod test {
         }
 
         assert_eq!(layer_manager.layers.len(), 0);
+    }
+
+    #[test]
+    fn test_traversal_chain_deconstruct() {
+        let mut layer_manager = PlutoLayerManager::new();
+        layer_manager.add_layer(Box::new(DummyLayer { enter_count: 0 }));
+
+        println!("{:?}", layer_manager.traversal_chain.fwd_chain);
+
+        assert_eq!(layer_manager.traversal_chain.fwd_chain.len(), 3);
+        assert_eq!(layer_manager.traversal_chain.bwd_chain.len(), 3);
+
+        loop {
+            if layer_manager.run() {
+                break;
+            }
+        }
+
         assert_eq!(layer_manager.traversal_chain.fwd_chain.len(), 1);
         assert_eq!(layer_manager.traversal_chain.bwd_chain.len(), 1);
     }
