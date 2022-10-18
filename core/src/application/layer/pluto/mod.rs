@@ -22,6 +22,9 @@
  * SOFTWARE.
  */
 
+mod traversal_chain;
+
+use crate::application::layer::pluto::traversal_chain::TraversalChain;
 use crate::application::layer::{
     Layer, LayerDependencyDeclaration, LayerDependencyManager, LayerManager, LayerSwapType,
     LayerSystemManager, LayerSystemProvider, LayerWalker, SystemId,
@@ -34,10 +37,6 @@ use std::fmt::{Debug, Formatter};
 use std::slice::IterMut;
 
 type LayerId = u64;
-
-struct PlutoLayerProxy {
-    new_layers: VecDeque<(LayerSwapType, Box<dyn Layer>)>,
-}
 
 struct PlutoLayerDependencyManager<'a> {
     manager: &'a mut PlutoLayerManager,
@@ -68,11 +67,10 @@ impl LayerDependencyManager for PlutoLayerDependencyManager<'_> {
 
     fn add_layer(&mut self, mut layer: Box<dyn Layer>) -> &mut dyn Layer {
         self.manager
-            .proxy
             .new_layers
             .push_back((LayerSwapType::Synchronous, layer));
 
-        self.manager.proxy.new_layers.back_mut().unwrap().1.as_mut()
+        self.manager.new_layers.back_mut().unwrap().1.as_mut()
     }
 }
 
@@ -142,128 +140,11 @@ impl Debug for LayerInfo {
     }
 }
 
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-enum TraversalChainNode {
-    Start,
-    End,
-    Link(LayerId),
-}
-
-#[derive(Clone)]
-struct TraversalChainWalker<'a>(TraversalChainNode, &'a TraversalChain);
-
-impl Iterator for TraversalChainWalker<'_> {
-    type Item = LayerId;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0 = self.1.get_next(&self.0);
-
-        match self.0 {
-            TraversalChainNode::Start => unreachable!(),
-            TraversalChainNode::End => None,
-            TraversalChainNode::Link(layer_id) => Some(layer_id),
-        }
-    }
-}
-
-struct TraversalChain {
-    fwd_chain: HashMap<TraversalChainNode, TraversalChainNode>,
-    bwd_chain: HashMap<TraversalChainNode, TraversalChainNode>,
-}
-
-impl TraversalChain {
-    fn new() -> Self {
-        let mut fwd_chain = HashMap::new();
-        fwd_chain.insert(TraversalChainNode::Start, TraversalChainNode::End);
-
-        let mut bwd_chain = HashMap::new();
-        bwd_chain.insert(TraversalChainNode::End, TraversalChainNode::Start);
-
-        Self {
-            fwd_chain,
-            bwd_chain,
-        }
-    }
-
-    fn remove(&mut self, id: LayerId) {
-        let link = &TraversalChainNode::Link(id);
-
-        let next = self.fwd_chain[link];
-        let prev = self.bwd_chain[link];
-
-        self.fwd_chain.insert(prev, next);
-        self.bwd_chain.insert(next, prev);
-
-        self.fwd_chain.remove(link);
-        self.bwd_chain.remove(link);
-    }
-
-    fn insert_after(&mut self, id: LayerId, after: LayerId) {
-        let link = TraversalChainNode::Link(id);
-        let after_link = TraversalChainNode::Link(after);
-
-        let next = self.fwd_chain[&after_link];
-        let prev = after_link;
-
-        self.fwd_chain.insert(prev, link);
-        self.fwd_chain.insert(link, next);
-
-        self.bwd_chain.insert(next, link);
-        self.bwd_chain.insert(link, prev);
-    }
-
-    fn insert_before(&mut self, id: LayerId, before: LayerId) {
-        let link = TraversalChainNode::Link(id);
-        let before_link = TraversalChainNode::Link(before);
-
-        let next = before_link;
-        let prev = self.bwd_chain[&before_link];
-
-        self.fwd_chain.insert(prev, link);
-        self.fwd_chain.insert(link, next);
-
-        self.bwd_chain.insert(next, link);
-        self.bwd_chain.insert(link, prev);
-    }
-
-    fn insert_first(&mut self, id: LayerId) {
-        let link = TraversalChainNode::Link(id);
-        let next = self.fwd_chain[&TraversalChainNode::Start];
-        let prev = TraversalChainNode::Start;
-
-        self.fwd_chain.insert(prev, link);
-        self.fwd_chain.insert(link, next);
-
-        self.bwd_chain.insert(next, link);
-        self.bwd_chain.insert(link, prev);
-    }
-
-    fn insert_last(&mut self, id: LayerId) {
-        let link = TraversalChainNode::Link(id);
-        let next = TraversalChainNode::End;
-        let prev = self.bwd_chain[&TraversalChainNode::End];
-
-        self.fwd_chain.insert(prev, link);
-        self.fwd_chain.insert(link, next);
-
-        self.bwd_chain.insert(next, link);
-        self.bwd_chain.insert(link, prev);
-    }
-
-    fn get_next(&self, node: &TraversalChainNode) -> TraversalChainNode {
-        self.fwd_chain[node]
-    }
-
-    fn iter(&self) -> TraversalChainWalker {
-        TraversalChainWalker(TraversalChainNode::Start, self)
-    }
-}
-
 pub struct PlutoLayerManager {
     traversal_chain: TraversalChain,
     layers: HashMap<LayerId, LayerInfo>,
     detaching_layers: Vec<(LayerSwapType, Box<dyn Layer>)>,
-    proxy: PlutoLayerProxy,
+    new_layers: VecDeque<(LayerSwapType, Box<dyn Layer>)>,
     id_counter: LayerId,
 }
 
@@ -273,9 +154,7 @@ impl PlutoLayerManager {
             traversal_chain: TraversalChain::new(),
             layers: HashMap::new(),
             detaching_layers: Vec::new(),
-            proxy: PlutoLayerProxy {
-                new_layers: VecDeque::new(),
-            },
+            new_layers: VecDeque::new(),
             id_counter: 0,
         }
     }
@@ -303,12 +182,12 @@ impl PlutoLayerManager {
     fn attach_poll(&mut self) {
         // Poll attaching layers
         let mut i = 0;
-        while i < self.proxy.new_layers.len() {
-            let (swap_type, ..) = self.proxy.new_layers[i];
-            let (.., layer) = &mut self.proxy.new_layers[i];
+        while i < self.new_layers.len() {
+            let (swap_type, ..) = self.new_layers[i];
+            let (.., layer) = &mut self.new_layers[i];
 
             if swap_type.poll_attach(layer) {
-                let (.., layer_owned) = self.proxy.new_layers.remove(i).unwrap();
+                let (.., layer_owned) = self.new_layers.remove(i).unwrap();
                 let id = self.create_id();
                 self.layers.insert(
                     id,
@@ -327,11 +206,13 @@ impl PlutoLayerManager {
 
 impl LayerManager for PlutoLayerManager {
     fn add_layer(&mut self, mut layer: Box<dyn Layer>) {
+        // Trigger the layer's attach event.
         layer.on_attach(&mut LayerDependencyDeclaration(
             &mut PlutoLayerDependencyManager { manager: self },
         ));
 
-        while let Some((.., layer)) = self.proxy.new_layers.pop_front() {
+        // Recursively add all dependency layers, breadth first.
+        while let Some((.., layer)) = self.new_layers.pop_front() {
             self.add_layer(layer);
         }
 
@@ -390,7 +271,8 @@ impl LayerManager for PlutoLayerManager {
 
 #[cfg(test)]
 mod test {
-    use crate::application::layer::pluto::{PlutoLayerManager, TraversalChainNode};
+    use crate::application::layer::pluto::traversal_chain::TraversalChainNode;
+    use crate::application::layer::pluto::PlutoLayerManager;
     use crate::application::layer::{
         Layer, LayerDependencyDeclaration, LayerManager, LayerSwapType, LayerSystemManager,
         LayerWalker,
@@ -479,6 +361,8 @@ mod test {
         );
     }
 
+    /// A single layer with one dependency is added to the layer manager.
+    /// A traversal chain with exactly 3 nodes should be present.
     #[test]
     fn test_traversal_chain() {
         let mut layer_manager = PlutoLayerManager::new();
@@ -500,6 +384,10 @@ mod test {
         assert_eq!(node, TraversalChainNode::End);
     }
 
+    /// A single layer with one dependency is added to the layer manager.
+    /// The layer manager is run until all layers are detached.
+    /// Both layers should be entered exactly 3 times.
+    /// The layer manager should be empty after the 3rd run.
     #[test]
     fn test_unmount() {
         let mut layer_manager = PlutoLayerManager::new();
@@ -530,6 +418,9 @@ mod test {
         assert_eq!(layer_manager.layers.len(), 0);
     }
 
+    /// A single layer with one dependency is added to the layer manager.
+    /// The layer manager is run 3 times.
+    /// The traversal chain should should container a single start -> finish link.
     #[test]
     fn test_traversal_chain_deconstruct() {
         let mut layer_manager = PlutoLayerManager::new();
