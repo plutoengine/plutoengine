@@ -252,9 +252,16 @@ pub trait LayerWalker {
     fn next(&mut self, systems: &mut dyn LayerSystemManager<'_>);
 }
 
-#[derive(Copy, Clone, Debug)]
+/// A strategy for swapping layers.
+///
+/// *This is used to determine how a layer should be attached and detached.*
+#[derive(Copy, Clone, Debug, Default)]
 pub enum LayerSwapType {
     /// The layer swap will be polled to completion synchronously in one iteration.
+    /// This behavior is guaranteed to complete in a single loop.
+    ///
+    /// *This is the default strategy.*
+    #[default]
     Synchronous,
     /// The layer swap will be polled once per iteration,
     /// it is up to the layer to decide when it is done swapping.
@@ -262,6 +269,9 @@ pub enum LayerSwapType {
 }
 
 impl LayerSwapType {
+    /// Runs a layer swap strategy to attach a layer.
+    ///
+    /// Returns `true` if the poll completed.
     fn poll_attach(&self, layer: &mut Box<dyn Layer>) -> bool {
         match self {
             LayerSwapType::Synchronous => {
@@ -276,6 +286,9 @@ impl LayerSwapType {
         }
     }
 
+    /// Runs a layer swap strategy to detach a layer.
+    ///
+    /// Returns `true` if the poll completed.
     fn poll_detach(&self, layer: &mut Box<dyn Layer>) -> bool {
         match self {
             LayerSwapType::Synchronous => {
