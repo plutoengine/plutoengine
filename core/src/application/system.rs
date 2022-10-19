@@ -24,6 +24,9 @@
 
 use std::any::Any;
 
+/// A utility trait for systems to support dynamic typing.
+///
+/// Automatically implemented for all systems.
 pub trait SystemDyn: 'static {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -47,4 +50,5 @@ where
     }
 }
 
+/// The base trait for all systems.
 pub trait System: SystemDyn {}
