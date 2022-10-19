@@ -307,6 +307,14 @@ impl LayerSwapType {
 /// Systems are identified by their type.
 type SystemId = TypeId;
 
+/// A base trait for layer managers.
+///
+/// Layer managers are structures providing layer management and traversal functionality.
+///
+/// First, a layer manager is initialized with a stack of layers.
+///
+/// Then, the layer manager is traversed, visiting each layer in the stack using the `run` method.
+/// The `run` method should be called repeatedly until it returns `true`.
 pub trait LayerManager {
     /// Adds a layer to the top of the layer "stack".
     ///
@@ -316,5 +324,8 @@ pub trait LayerManager {
     /// Runs a single iteration of the layer manager.
     ///
     /// *Layers are traversed first bottom to top, then top to bottom.*
+    ///
+    /// Returns `true` if the layer manager has finished running, that is whether no
+    /// layers are attached and no layers are polled to be attached.
     fn run(&mut self) -> bool;
 }
